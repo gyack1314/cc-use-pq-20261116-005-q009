@@ -38,6 +38,14 @@ def parser() -> ArgumentParser:
     exported.add_argument("--output", help="write bundle to a local file")
     verify = commands.add_parser("verify")
     verify.add_argument("bundle", help="exported local bundle")
+    deliver = commands.add_parser("deliver")
+    deliver.add_argument("version", type=int)
+    deliver.add_argument("--output", help="write public delivery credential to a local file")
+    audit_view = commands.add_parser("audit-view")
+    audit_view.add_argument("version", type=int)
+    audit_view.add_argument("--output", help="write internal audit credential to a local file")
+    verify_view = commands.add_parser("verify-view")
+    verify_view.add_argument("document", help="local credential view document")
     lineage = commands.add_parser("lineage")
     lineage.add_argument("version", type=int)
     series = commands.add_parser("series")
@@ -156,6 +164,22 @@ def execute(args: Namespace) -> Any:
         if args.command == "verify":
             bundle = read_json(args.bundle)
             return {"verified": service.verify(bundle)}
+        if args.command == "deliver":
+            document = service.delivery_view(args.version)
+            if args.output:
+                Path(args.output).write_text(json.dumps(document, ensure_ascii=False, sort_keys=True, indent=2), encoding="utf-8")
+                return {"path": args.output, "digest": document["digest"],
+                        "view_digest": document["view_digest"]}
+            return document
+        if args.command == "audit-view":
+            document = service.audit_view(args.version)
+            if args.output:
+                Path(args.output).write_text(json.dumps(document, ensure_ascii=False, sort_keys=True, indent=2), encoding="utf-8")
+                return {"path": args.output, "digest": document["digest"]}
+            return document
+        if args.command == "verify-view":
+            document = read_json(args.document)
+            return {"view": document.get("view"), "verified": service.verify_view(document)}
         if args.command == "lineage":
             return service.lineage(args.version)
         if args.command == "series":

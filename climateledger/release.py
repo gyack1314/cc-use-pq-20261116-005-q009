@@ -3,6 +3,7 @@ from __future__ import annotations
 from hashlib import sha256
 from typing import Any
 
+from .disclosure import manifest_digest
 from .intake import canonical_bytes
 from .registry import ContractError
 
@@ -42,6 +43,17 @@ class ReleaseBuilder:
                             "value": item["value"], "unit": item["unit"]}
         return [entries[key] for key in sorted(entries)]
 
+    def _source_files(self, entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        proofs: dict[int, dict[str, Any]] = {}
+        for entry in entries:
+            batch_id = entry["batch_id"]
+            if batch_id not in proofs:
+                batch = self.store.batch(batch_id)
+                proofs[batch_id] = {"batch_id": batch["id"], "source": batch["source"],
+                                    "external_id": batch["external_id"], "revision": batch["revision"],
+                                    "payload_hash": batch["payload_hash"], "row_count": batch["row_count"]}
+        return [proofs[key] for key in sorted(proofs)]
+
     def _manifest(self, batch: dict[str, Any], version: int,
                   entries: list[dict[str, Any]], prior: dict[str, Any] | None) -> dict[str, Any]:
         data_hash = sha256(canonical_bytes(entries)).hexdigest()
@@ -49,6 +61,7 @@ class ReleaseBuilder:
                 "batch": {"id": batch["id"], "source": batch["source"], "external_id": batch["external_id"],
                           "revision": batch["revision"], "payload_hash": batch["payload_hash"],
                           "row_count": batch["row_count"]},
+                "source_files": self._source_files(entries),
                 "entry_count": len(entries), "entries_sha256": data_hash,
                 "quality_findings": batch["findings"]}
 
@@ -61,7 +74,7 @@ class ReleaseBuilder:
         manifest = self.preview(batch_id, expected_revision)
         prior = self.store.latest_release()
         entries = self._entries(batch_id, prior["version"] if prior else None)
-        digest = sha256(canonical_bytes(manifest)).hexdigest()
+        digest = manifest_digest(manifest)
         return self.store.publish(batch_id, expected_revision, manifest, entries, digest)
 
     def export(self, version: int) -> dict[str, Any]:
@@ -72,8 +85,7 @@ class ReleaseBuilder:
         actual = sha256(canonical_bytes(comparable)).hexdigest()
         if actual != release["manifest"]["entries_sha256"]:
             raise ContractError("release_corrupt", "release entries digest differs from manifest")
-        manifest_digest = sha256(canonical_bytes(release["manifest"])).hexdigest()
-        if manifest_digest != release["digest"]:
+        if manifest_digest(release["manifest"]) != release["digest"]:
             raise ContractError("release_corrupt", "manifest digest differs from stored digest")
         if release["manifest"]["entry_count"] != len(entries):
             raise ContractError("release_corrupt", "release entry count differs")
@@ -90,7 +102,7 @@ class ReleaseBuilder:
             return False
         try:
             entries_hash = sha256(canonical_bytes(bundle["entries"])).hexdigest()
-            manifest_hash = sha256(canonical_bytes(manifest)).hexdigest()
+            manifest_hash = manifest_digest(manifest)
         except (TypeError, ValueError):
             return False
         return entries_hash == manifest.get("entries_sha256") and manifest_hash == bundle["digest"]

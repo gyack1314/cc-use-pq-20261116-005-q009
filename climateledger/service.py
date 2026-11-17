@@ -12,6 +12,7 @@ from .store import LedgerStore
 from .compare import Comparator, SeriesWindow
 from .audit import AuditInspector
 from .coverage import CoverageReporter, BatchCoverage
+from .disclosure import CredentialViews
 from .replay import ReplayInspector
 from .operations import ReviewQueue, ReceiptCatalog
 
@@ -31,6 +32,7 @@ class LedgerService:
         self.replay_inspector = ReplayInspector(self.store, self.registry)
         self.queue = ReviewQueue(self.store)
         self.receipts = ReceiptCatalog(self.store, self.registry)
+        self.credentials = CredentialViews(self.store, self.releases)
 
     def close(self) -> None:
         self.store.close()
@@ -82,6 +84,15 @@ class LedgerService:
 
     def verify(self, bundle: dict[str, Any]) -> bool:
         return self.releases.verify(bundle)
+
+    def delivery_view(self, version: int) -> dict[str, Any]:
+        return self.credentials.public_view(version)
+
+    def audit_view(self, version: int) -> dict[str, Any]:
+        return self.credentials.internal_view(version)
+
+    def verify_view(self, document: dict[str, Any]) -> bool:
+        return CredentialViews.verify_view(document)
 
     def lineage(self, version: int) -> list[dict[str, Any]]:
         return self.releases.lineage(version)
